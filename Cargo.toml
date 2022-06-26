@@ -1,0 +1,17 @@
+[package]
+name = "gpgpu"
+version = "0.1.1"
+edition = "2021"
+
+[dependencies]
+wgpu = { git = "https://github.com/gfx-rs/wgpu" }
+env_logger = "0.9.0"
+pollster = "0.2.5"
+winit = "0.26.1"
+log = "0.4"
+bytemuck = { version = "1.4", features = ["derive"] }
+nanorand = { version = "0.7", default-features = false, features = ["wyrand"] }
+
+[[bin]]
+name = "gpgpu"
+path = "main.rs"
