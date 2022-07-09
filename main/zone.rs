@@ -1,9 +1,11 @@
+use std::mem;
 //Created by Ryan Berg 7/5/22
 //ToDo: use async functions
 //ToDo:!! Running agent compute for every zone!
 use nanorand::{Rng, WyRand};
 use crate::layer::{Layer};
 use bitflags::bitflags;
+use wgpu::BufferAddress;
 
 bitflags! {
     struct AgentType: u32 {
@@ -60,32 +62,37 @@ impl Zone{
         let signal_vertex_buffer_data = vec![0., 0., 1., 0., 1., 1., 0., 0., 1., 0., 1., 1.];
 
         // let mut max_agent_count = 10000u32;
-        let current_agent_count = 11u32;
+        let current_agent_count = 53u32;
 
         //ToDo: vector not needed if not pushing data
-        let mut agent_list = vec![0u32; 5 * 11];
+        let mut agent_list = vec![0u32; 5 * current_agent_count as usize];
 
         let mut zone2_agent_grid_occupancy_data = vec![0u32; (5 * diffuse_size[0] * diffuse_size[1]) as usize];
 
-        for i in (0..current_agent_count*5).step_by(5){
+        for i in 0..current_agent_count{
             let x = random(); let y = random();
             let index = ((y * diffuse_size[0] as u32 + x) * 5) as usize;
-            zone2_agent_grid_occupancy_data[index] |= AgentType::TCELL_WANDER.bits;
-            zone2_agent_grid_occupancy_data[index + AgentType::TCELL_WANDER.bits as usize] += 1;  //count
 
-            agent_list[i as usize] = AgentType::TCELL_WANDER.bits;
-            agent_list[i as usize + 1] = 2;  //current zone
-            agent_list[i as usize + 2] = x;  //x pos
-            agent_list[i as usize + 3] = y;  //y pos
-            agent_list[i as usize + 4] = 100;//life remaining
+            zone2_agent_grid_occupancy_data[index] = AgentType::TCELL_WANDER.bits;
+            zone2_agent_grid_occupancy_data[(index as u32 + AgentType::TCELL_WANDER.bits) as usize] = 1;  //count
+
+            agent_list[(i * 5) as usize] = AgentType::TCELL_WANDER.bits;
+            agent_list[(i * 5) as usize + 1] = 2;  //current zone
+            agent_list[(i * 5) as usize + 2] = x;  //x pos
+            agent_list[(i * 5) as usize + 3] = y;  //y pos
+            agent_list[(i * 5) as usize + 4] = 100;//life remaining
         }
 
         let mut zone2_signal_grid_occupancy_data = vec![0u32; (3 * diffuse_size[0] * diffuse_size[1]) as usize];
 
+        let mut count = 0;
         for grid_bin_chunk in zone2_signal_grid_occupancy_data.chunks_mut(3) {
-            grid_bin_chunk[0] = SignalType::CYTOKINE.bits;
-            grid_bin_chunk[1] = 32767;  //cytokine signal strength. max is the max of a signed 16 bit integer 32767. min is -32768
-            grid_bin_chunk[2] = 0;      //antibody signal strength
+            if count >= 4000 && count < 5600 {
+                grid_bin_chunk[0] = SignalType::CYTOKINE.bits;
+                grid_bin_chunk[1] = 32767;  //cytokine signal strength. max is the max of a signed 16 bit integer 32767. min is -32768
+                grid_bin_chunk[2] = 0;      //antibody signal strength
+            }
+            count+=1;
         }
 
         let zone_size_buffer_data = [100u32, 100, 0, 0, 100, 100, 0, 0, 100, 100, 0, 0];
@@ -99,7 +106,7 @@ impl Zone{
         }
     }
 
-    pub fn compute_pass(&mut self, _view: &wgpu::TextureView, queue: &wgpu::Queue, device: &wgpu::Device)
+    pub fn compute_pass(&mut self, queue: &wgpu::Queue, device: &wgpu::Device)
     {
         let layer = &mut self.diffuse_layer;
 
@@ -112,7 +119,12 @@ impl Zone{
             compute_pass.set_bind_group(1, &layer.agent_list_bind_groups[layer.active_frame as u32 as usize], &[]);
             compute_pass.set_bind_group(2, &layer.agent_grid_bind_groups[layer.active_frame as u32 as usize], &[]);
             compute_pass.set_bind_group(3, &layer.signal_grid_bind_groups[layer.active_frame as u32 as usize], &[]);
-            compute_pass.dispatch_workgroups(11, 1, 1);
+            compute_pass.dispatch_workgroups(53, 1, 1);
+        }
+        {
+            encoder.copy_buffer_to_buffer(&layer.agent_grid_buffers[((layer.active_frame as u32 + 1) % 2) as usize], 0,
+                                          &layer.agent_grid_buffers[layer.active_frame as u32 as usize], 0,
+                                          (100 * 100 * 5 * mem::size_of::<u32>()) as usize as BufferAddress);
         }
         queue.submit(Some(encoder.finish()));
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Command Encoder") });
@@ -126,13 +138,14 @@ impl Zone{
             compute_pass.set_bind_group(3, &layer.storage_texture_bind_group, &[]);
             compute_pass.dispatch_workgroups(100, 100, 1);
         }
+        layer.toggle_active_frame();
         {
-            // encoder.copy_texture_to_texture(layer.storage_texture.as_image_copy(), layer.read_texture.as_image_copy(), layer.texture_size);
+            encoder.copy_texture_to_texture(layer.storage_texture.as_image_copy(), layer.read_texture.as_image_copy(), layer.texture_size);
             //ToDo: add 2 read textures and 2 storage textures
             // encoder.copy_texture_to_texture(layer.storage_texture.as_image_copy(), layer.read_texture.as_image_copy(), layer.texture_size);
             // encoder.copy_texture_to_texture(layer.storage_texture.as_image_copy(), layer.read_texture.as_image_copy(), layer.texture_size);
         }
-        layer.toggle_active_frame();
+        // layer.toggle_active_frame();
         queue.submit(Some(encoder.finish()));
     }
     pub fn draw(&mut self, zone: u32, view: &wgpu::TextureView, queue: &wgpu::Queue, device: &wgpu::Device){
@@ -169,7 +182,6 @@ impl Zone{
             render_pass.set_vertex_buffer(0, layer.vertex_buffer.slice(..));
             render_pass.draw(0..layer.vertex_count, 0..layer.instance_count);
         }
-        layer.toggle_active_frame();
         queue.submit(Some(encoder.finish()));
     }
 }

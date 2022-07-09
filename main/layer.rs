@@ -33,7 +33,8 @@ pub struct Layer{
 
     pub read_texture: wgpu::Texture,
     pub storage_texture: wgpu::Texture,
-    pub texture_size: Extent3d
+    pub texture_size: Extent3d,
+    pub agent_grid_buffers: Vec<wgpu::Buffer>
 }
 
 impl Layer{
@@ -193,7 +194,7 @@ impl Layer{
                 device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Agent Grid Occupancy Buffer"),
                     contents: bytemuck::cast_slice(&zone2_agent_grid_occupancy_data),
-                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST| wgpu::BufferUsages::COPY_SRC,
                 }),
             );
         }
@@ -493,9 +494,9 @@ impl Layer{
             }));
         }
 
-        let diffuse_bytes = include_bytes!("../test_image.png");
-        let diffuse_image = image::load_from_memory(diffuse_bytes).unwrap();
-        let diffuse_rgba = diffuse_image.to_rgba8();
+        // let diffuse_bytes = include_bytes!("../test_image.png");
+        // let diffuse_image = image::load_from_memory(diffuse_bytes).unwrap();
+        // let diffuse_rgba = diffuse_image.to_rgba8();
 
         let diffuse_size = [100u32, 100];
 
@@ -511,7 +512,7 @@ impl Layer{
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             label: Some("Diffuse Texture")
         });
@@ -553,11 +554,11 @@ impl Layer{
 
 
         let diffuse_sampler = device.create_sampler(&wgpu::SamplerDescriptor{
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
             address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
@@ -704,9 +705,9 @@ impl Layer{
 
         //Create Pipelines
         let compute_diffuse_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor{
-            label: None,
+            label: Some("Compute Diffuse Pipeline"),
             layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
-                label: Some("Compute Diffuse"),
+                label: Some("Compute Diffuse Pipeline Layout"),
                 bind_group_layouts: &[&zone_sizes_bind_group_layout, &agent_grid_bind_group_layout, &signal_grid_bind_group_layout, &storage_texture_bind_group_layout],
                 push_constant_ranges: &[]
             })),
@@ -775,7 +776,8 @@ impl Layer{
             object_count,
             read_texture: diffuse_texture,
             storage_texture: diffuse_storage_texture,
-            texture_size
+            texture_size,
+            agent_grid_buffers
         }
     }
     pub fn toggle_active_frame(&mut self) {

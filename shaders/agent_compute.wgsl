@@ -48,9 +48,28 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
     return;
   }
 
-  let plus_one = agent_list_src[0].state + u32(1);
+    var position = vec2<u32>(agent_list_src[index].x_coord, agent_list_src[index].y_coord);
+    let grid_index = position.y * u32(100) + position.x;
+    let agent_state = agent_list_src[index].state;
 
-  agent_list_dst[0].state = plus_one;
+    position.y = position.y + u32(1);
+    if(position.y > u32(99)) {position.y = u32(0);}
+    let next_grid_index = position.y * u32(100) + position.x;
+
+    agent_list_dst[index].x_coord = position.x; agent_list_dst[index].y_coord = position.y;
+
+    zone1_agent_grid_occupants_dst[grid_index].tcell_wander_count = zone1_agent_grid_occupants_src[grid_index].tcell_wander_count  - u32(1);
+    zone1_agent_grid_occupants_dst[grid_index].occupant_bit_flags = zone1_agent_grid_occupants_src[grid_index].occupant_bit_flags  - u32(1);
+
+    zone1_agent_grid_occupants_dst[next_grid_index].occupant_bit_flags = zone1_agent_grid_occupants_src[next_grid_index].occupant_bit_flags + u32(1);
+    zone1_agent_grid_occupants_dst[next_grid_index].tcell_wander_count = zone1_agent_grid_occupants_src[next_grid_index].tcell_wander_count + u32(1);
+
+
+
+//
+//  let plus_one = agent_list_src[0].state + u32(1);
+//
+//  agent_list_dst[0].state = plus_one;
 
 //  textureStore(storage_texture, vec2<i32>(global_invocation_id.xy), vec4<f32>(0., 1., .5, d));
 }

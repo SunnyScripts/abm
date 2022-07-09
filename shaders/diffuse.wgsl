@@ -16,10 +16,10 @@ struct SignalGridBin {
 
 struct ZoneSize {
   dimensions: vec2<u32>,
-  placeholder: vec2<u32>,//to meet min size requirements of uniform
+  resolution: vec2<u32>,
 };
 
-@group(0) @binding(0) var<uniform> zone_size:  array<ZoneSize, 3>;
+@group(0) @binding(0) var<uniform> zone_size: ZoneSize;
 
 @group(1) @binding(0) var<storage, read> zone1_agent_grid_occupants_src: array<AgentGridBin>;
 @group(1) @binding(2) var<storage, read> zone2_agent_grid_occupants_src: array<AgentGridBin>;
@@ -44,8 +44,51 @@ let MAX = 1.;
 
 @compute
 @workgroup_size(64)
-fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
-    return;
+fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>){
+
+    var agent_intensity = 0.;
+    var signal_intensity = 0.;
+
+    let index = global_invocation_id.y * u32(width) + global_invocation_id.x;
+
+    if (global_invocation_id.z == u32(0)){
+        if (zone1_agent_grid_occupants_src[index].occupant_bit_flags != u32(0)) {agent_intensity = 1.;}
+        if (zone1_signal_grid_occupants_src[index].occupant_bit_flags != u32(0)) {signal_intensity = 1.;}
+        textureStore(storage_texture_zone_1, vec2<i32>(global_invocation_id.xy),
+        vec4<f32>(.85 * signal_intensity, .7 * agent_intensity, .2, 1.));
+    }
+//    else if(global_invocation_id.z == u32(1)){
+//        agent_color.a = f32(zone2_agent_grid_occupants_src[index].occupant_bit_flags / zone2_agent_grid_occupants_src[index].occupant_bit_flags);
+//        signal_color.a = f32(zone2_signal_grid_occupants_src[index].occupant_bit_flags / zone2_signal_grid_occupants_src[index].occupant_bit_flags);
+//        textureStore(storage_texture_zone_2, vec2<i32>(global_invocation_id.xy), agent_color-signal_color);
+//    }
+//    else{
+//        agent_color.a = f32(zone3_agent_grid_occupants_src[index].occupant_bit_flags / zone3_agent_grid_occupants_src[index].occupant_bit_flags);
+//        signal_color.a = f32(zone3_signal_grid_occupants_src[index].occupant_bit_flags / zone3_signal_grid_occupants_src[index].occupant_bit_flags);
+//        textureStore(storage_texture_zone_3, vec2<i32>(global_invocation_id.xy), agent_color-signal_color);
+//    }
+//    textureStore(storage_texture_zone_3, vec2<i32>(global_invocation_id.xy), agent_color-signal_color);
+return;
+}
+
+//        switch (global_invocation_id.z){
+//            case 0:{
+//                agent_color.a = f32(zone1_agent_grid_occupants_src[index].occupant_bit_flags / zone1_agent_grid_occupants_src[index].occupant_bit_flags);
+//                signal_color.a = f32(zone1_signal_grid_occupants_src[index].occupant_bit_flags / zone1_signal_grid_occupants_src[index].occupant_bit_flags);
+//                textureStore(storage_texture_zone_1, vec2<i32>(global_invocation_id.xy), agent_color+signal_color);
+//            }
+//            case 1:{
+//                agent_color.a = f32(zone2_agent_grid_occupants_src[index].occupant_bit_flags / zone2_agent_grid_occupants_src[index].occupant_bit_flags);
+//                signal_color.a = f32(zone2_signal_grid_occupants_src[index].occupant_bit_flags / zone2_signal_grid_occupants_src[index].occupant_bit_flags);
+//                textureStore(storage_texture_zone_2, vec2<i32>(global_invocation_id.xy), agent_color+signal_color);
+//            }
+//            default:{
+//                agent_color.a = f32(zone3_agent_grid_occupants_src[index].occupant_bit_flags / zone3_agent_grid_occupants_src[index].occupant_bit_flags);
+//                signal_color.a = f32(zone3_signal_grid_occupants_src[index].occupant_bit_flags / zone3_signal_grid_occupants_src[index].occupant_bit_flags);
+//                textureStore(storage_texture_zone_3, vec2<i32>(global_invocation_id.xy), agent_color+signal_color);
+//            }
+//        }
+
 //    let local_coord = vec2<i32>(global_invocation_id.xy);
 //
 //    let texel = textureLoad(t_diffuse, vec2<i32>(local_coord), i32(0));
@@ -84,4 +127,3 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
 //    textureStore(storage_texture, vec2<i32>(global_invocation_id.xy), vec4<f32>(0., 1., .5, d));
 
 //    particlesDst[index] = d;
-}

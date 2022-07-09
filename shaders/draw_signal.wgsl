@@ -1,6 +1,6 @@
 struct ZoneSize {
     dimensions: vec2<u32>,
-    placeholder: vec2<u32>,//to meet min size requirements of uniform
+    resolution: vec2<u32>,
 };
 
 @group(0) @binding(0) var<uniform> zone_size:  array<ZoneSize, 3>;

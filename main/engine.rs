@@ -37,7 +37,7 @@ fn main(){
     };
     let hidpi_factor = window.scale_factor();
     let adapter = block_on(wgpu_instance.request_adapter(&wgpu::RequestAdapterOptions{
-        power_preference: wgpu::PowerPreference::default(),
+        power_preference: wgpu::PowerPreference::HighPerformance,
         compatible_surface: Some(&surface),
         force_fallback_adapter: false
     })).unwrap();
@@ -96,6 +96,8 @@ fn main(){
     let mut last_frame = Instant::now();
     let mut last_cursor = None;
     let mut circulatory_window_size: [f32; 2] = [512., 512.];
+
+    let mut frame_count: usize = 0;
 
     let mut circulatory = Zone::new([100, 100], shaders, surface.get_supported_formats(&adapter)[0], &device, &queue);
 
@@ -207,8 +209,11 @@ fn main(){
                             }
                         ));
                     }
-                    // circulatory.compute_pass(&view, &queue, &device);
-                    circulatory.draw(3, renderer.textures.get(circulatory_texture_id).unwrap().view(), &queue, &device);
+
+                    // if frame_count % 2 == 0{
+                        circulatory.compute_pass(&queue, &device);
+                        circulatory.draw(3, renderer.textures.get(circulatory_texture_id).unwrap().view(), &queue, &device);
+                    // }
                 }
 
                 //Update GUI
@@ -238,6 +243,7 @@ fn main(){
                 drop(render_pass);
                 queue.submit(Some(encoder.finish()));
                 frame.present();
+                // frame_count+=1;
             }
             //endregion
             _ => ()
@@ -245,28 +251,3 @@ fn main(){
         platform.handle_event(imgui_context.io_mut(), &window, &event);
     });
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
