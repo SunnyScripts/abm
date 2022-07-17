@@ -1,6 +1,7 @@
 //Created by Ryan Berg 7/4/22
 
-//ToDo: add imgui plot windows
+//ToDo: add down level flags for compute shaders
+//ToDo: fix time buffer
 mod gpu_window;
 mod gpu_tasks;
 
@@ -48,7 +49,7 @@ impl Default for UniformData {
         }
     }
 }
-//[[0., 0.],[ 0., 1.],[ 1., 1.],[ 1., 0.],[ 0., -1.],[ -1., -1.], [-1., 0.],[ 1., -1.], [-1., 1.]]
+
 pub struct Shaders{
     pub compute_agents: wgpu::ShaderModule,
     pub compute_diffuse: wgpu::ShaderModule,
@@ -66,7 +67,7 @@ fn main(){
 
     let (window, size, surface) = {
         let window = Window::new(&event_loop).unwrap();
-        window.set_inner_size(LogicalSize{width: 1200., height: 600.});
+        window.set_inner_size(LogicalSize{width: 1200., height: 1200.});
         window.set_title("BIS 22");
 
         let size = window.inner_size();
@@ -76,7 +77,7 @@ fn main(){
     };
     let hidpi_factor = window.scale_factor();
     let adapter = block_on(wgpu_instance.request_adapter(&wgpu::RequestAdapterOptions{
-        power_preference: wgpu::PowerPreference::HighPerformance,
+        power_preference: wgpu::PowerPreference::default(),
         compatible_surface: Some(&surface),
         force_fallback_adapter: false
     })).unwrap();
@@ -114,7 +115,7 @@ fn main(){
     platform.attach_window(imgui_context.io_mut(), &window, HiDpiMode::Default);
     imgui_context.set_ini_filename(None);
     let mut last_frame = Instant::now();
-    let mut cpu_time = Instant::now();
+    let cpu_time = Instant::now();
     // let mut last_cursor = None;
 
     let font_size = (14. * hidpi_factor) as f32;
@@ -139,10 +140,10 @@ fn main(){
     let mut zone1_window = GPUWindow::new([560., 30.], uniform_buffer_data.window1_dimensions,
                                           "Zone 1 (Tissue)", &mut renderer, &device);
 
-    // let mut zone2_window = GPUWindow::new([560., 30.], uniform_buffer_data.window2_dimensions,
-    //                                       "Zone 2 (Lymph Node)", &mut renderer, &device);
-    // let mut zone3_window = GPUWindow::new([1120., 30.], uniform_buffer_data.window3_dimensions,
-    //                                       "Zone 3 (Circulatory)", &mut renderer, &device);
+    let mut zone2_window = GPUWindow::new([30., 500.], uniform_buffer_data.window2_dimensions,
+                                          "Zone 2 (Lymph Node)", &mut renderer, &device);
+    let mut zone3_window = GPUWindow::new([560., 500.], uniform_buffer_data.window2_dimensions,
+                                          "Zone 3 (Circulatory)", &mut renderer, &device);
 
     let mut values = [0.3, 0., 0., 0., 0., 0.61];
 
@@ -235,35 +236,35 @@ fn main(){
                 }
 
 
-                ui.plot_lines( im_str!("Cell Count"), &values).graph_size([300., 200.])
-                    .scale_max(1.0)
-                    .scale_min(0.0)
-                    .build();
+                // ui.plot_lines( im_str!("Cell Count"), &values).graph_size([300., 200.])
+                //     .scale_max(1.0)
+                //     .scale_min(0.0)
+                //     .build();
 
                 // ui.plot_lines( im_str!("Cell Count"), &values).graph_size([300., 300.])
                 //     .scale_max(1.0)
                 //     .scale_min(0.0)
                 //     .build();
 
-                // match zone2_window.update(&ui, &mut renderer, &device) {
-                //     Some((texture_id, new_size)) => {
-                //         uniform_buffer_data.window2_dimensions = new_size;
-                //         texture_ids[1] = Some(texture_id);
-                //     },
-                //     None => {/*_*/},
-                // }
-                // match zone3_window.update(&ui, &mut renderer, &device) {
-                //     Some((texture_id, new_size)) => {
-                //         uniform_buffer_data.window3_dimensions = new_size;
-                //         texture_ids[2] = Some(texture_id);
-                //     },
-                //     None => {/*_*/},
-                // }
+                match zone2_window.update(&ui, &mut renderer, &device) {
+                    Some((texture_id, new_size)) => {
+                        uniform_buffer_data.window2_dimensions = new_size;
+                        texture_ids[1] = Some(texture_id);
+                    },
+                    None => {/*_*/},
+                }
+                match zone3_window.update(&ui, &mut renderer, &device) {
+                    Some((texture_id, new_size)) => {
+                        uniform_buffer_data.window2_dimensions = new_size;
+                        texture_ids[2] = Some(texture_id);
+                    },
+                    None => {/*_*/},
+                }
 
                 uniform_buffer_data.time[0] = cpu_time.elapsed().as_secs_f32();
                 queue.write_buffer(&gpu_tasks.uniform_buffer, 0, bytemuck::cast_slice(&[uniform_buffer_data]));
 
-                gpu_tasks.compute_pass(&queue, &device);
+                gpu_tasks.compute_pass(&queue, &device, renderer.textures.get(texture_ids[0].unwrap()).unwrap().view());
                 gpu_tasks.draw(texture_ids, &mut renderer, &queue, &device);
 
 
