@@ -1,15 +1,14 @@
 //Created by Ryan Berg 7/4/22
 
 //ToDo: add down level flags for compute shaders
-//ToDo: fix time buffer
 mod gpu_window;
 mod gpu_tasks;
 
 use std::borrow::Cow;
 use std::default::Default;
-use imgui::{Condition, FontSource, im_str, TextureId};
+use imgui::{FontSource, TextureId};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
-use imgui_wgpu::{Renderer, RendererConfig, Texture, TextureConfig};
+use imgui_wgpu::{Renderer, RendererConfig};
 use pollster::block_on;
 use std::time::Instant;
 use winit::{
@@ -22,35 +21,45 @@ use winit::{
 use crate::gpu_tasks::GPUTasks;
 use crate::gpu_window::GPUWindow;
 
+const PORTAL_COLOR: [f32; 4] = [0.6, 0.33, 0., 1.];
+const AGENT_WANDER: [f32; 4] = [0.3882, 0.7725, 0.8588, 1.];
+const AGENT_CHASE_COLOR: [f32; 4] = [0.6, 0.33, 0., 1.];
+const SIGNAL_COLOR: [f32; 4] = [0., 0., 0.85, 1.];
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct  UniformData{
-    time: [f32; 2],              //[accumulator, frame_delta]
+    time: f32,                  //[accumulator, frame_delta]
+    zone_offset: i32,
     zone1_dimensions: [f32; 2],  //[width, height]
     window1_dimensions: [f32; 2],//[width, height]
     zone2_dimensions: [f32; 2],
     window2_dimensions: [f32; 2],
     zone3_dimensions: [f32; 2],
     // window3_dimensions: [f32; 2],
-    neighbors: [[f32; 4]; 9]     //[no move, south, south-east, ect...]//required stride of 16B
+    neighbors: [[f32; 4]; 9],     //[no move, south, south-east, ect...]//required stride of 16B
+    colors: [[f32; 4]; 4],
 }
 
 impl Default for UniformData {
     fn default() -> UniformData {
         UniformData {
-            time: [0., 0.],
+            time: 0.,
+            zone_offset: 10_000,
             zone1_dimensions: [100., 100.],
             window1_dimensions: [500., 500.],
             zone2_dimensions: [100., 100.],
             window2_dimensions: [500., 500.],
             zone3_dimensions: [100., 100.],
             // window3_dimensions: [500., 500.],
-            neighbors: [[0., 0., 0., 0.],[ 1., 1., 0., 0.],[ -1., 1., 0., 0.],[ 1., 0., 0., 0.],[ 0., -1., 0., 0.],[ -1., -1., 0., 0.], [-1., 0., 0., 0.],[ 1., -1., 0., 0.], [0., 1., 0., 0.]]
+            neighbors: [[0., 0., 0., 0.],[ 1., 1., 0., 0.],[ -1., 1., 0., 0.],[ 1., 0., 0., 0.],[ 0., -1., 0., 0.],[ -1., -1., 0., 0.], [-1., 0., 0., 0.],[ 1., -1., 0., 0.], [0., 1., 0., 0.]],
+            colors: [PORTAL_COLOR,AGENT_WANDER,AGENT_CHASE_COLOR,SIGNAL_COLOR],
         }
     }
 }
 
 pub struct Shaders{
+    pub clear_agent_buffers: wgpu::ShaderModule,
     pub compute_agents: wgpu::ShaderModule,
     pub compute_diffuse: wgpu::ShaderModule,
     pub vert_frag_texture_sampler: wgpu::ShaderModule,
@@ -77,7 +86,7 @@ fn main(){
     };
     let hidpi_factor = window.scale_factor();
     let adapter = block_on(wgpu_instance.request_adapter(&wgpu::RequestAdapterOptions{
-        power_preference: wgpu::PowerPreference::default(),
+        power_preference: wgpu::PowerPreference::HighPerformance,
         compatible_surface: Some(&surface),
         force_fallback_adapter: false
     })).unwrap();
@@ -86,6 +95,10 @@ fn main(){
     //endregion
 
     let shader = Shaders{
+        clear_agent_buffers: device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Clear Agent Buffers Compute Shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../shaders/clear_agent_buffers.wgsl")))
+        }),
         compute_agents: device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Agent Compute Shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../shaders/compute_agents.wgsl")))
@@ -95,7 +108,7 @@ fn main(){
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../shaders/compute_diffuse.wgsl")))
         }),
         vert_frag_texture_sampler: device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Draw Signal Shader"),
+            label: Some("Render Shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../shaders/vert_frag_texture_sampler.wgsl")))
         })
     };
@@ -200,7 +213,7 @@ fn main(){
             Event::RedrawEventsCleared => {
                 let now = Instant::now();
                 imgui_context.io_mut().update_delta_time(now - last_frame);
-                uniform_buffer_data.time[1] = (now - last_frame).as_secs_f32();
+                uniform_buffer_data.time = (now - last_frame).as_secs_f32();
                 last_frame = now;
 
                 let frame = match surface.get_current_texture(){
@@ -235,16 +248,10 @@ fn main(){
                     None => {/*_*/},
                 }
 
-
-                // ui.plot_lines( im_str!("Cell Count"), &values).graph_size([300., 200.])
-                //     .scale_max(1.0)
-                //     .scale_min(0.0)
-                //     .build();
-
-                // ui.plot_lines( im_str!("Cell Count"), &values).graph_size([300., 300.])
-                //     .scale_max(1.0)
-                //     .scale_min(0.0)
-                //     .build();
+                ui.plot_lines( "Cell Count", &values).graph_size([300., 200.])
+                    .scale_max(1.0)
+                    .scale_min(0.0)
+                    .build();
 
                 match zone2_window.update(&ui, &mut renderer, &device) {
                     Some((texture_id, new_size)) => {
@@ -261,13 +268,11 @@ fn main(){
                     None => {/*_*/},
                 }
 
-                uniform_buffer_data.time[0] = cpu_time.elapsed().as_secs_f32();
+                uniform_buffer_data.time = cpu_time.elapsed().as_secs_f32();
                 queue.write_buffer(&gpu_tasks.uniform_buffer, 0, bytemuck::cast_slice(&[uniform_buffer_data]));
 
-                gpu_tasks.compute_pass(&queue, &device, renderer.textures.get(texture_ids[0].unwrap()).unwrap().view());
+                gpu_tasks.compute_pass(&queue, &device);
                 gpu_tasks.draw(texture_ids, &mut renderer, &queue, &device);
-
-
 
                 let mut encoder: wgpu::CommandEncoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -276,14 +281,13 @@ fn main(){
                         view: &view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.7, g: 0.4, b: 0.1, a: 0. }),
+                            load: wgpu::LoadOp::Clear(wgpu::Color { r: 0., g: 0., b: 0., a: 1. }),
+                            // load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.7, g: 0.4, b: 0.1, a: 0. }),
                             store: true,
                         },
                     })],
                     depth_stencil_attachment: None,
                 });
-
-
 
                 renderer.render(ui.render(), &queue, &device, &mut render_pass)
                     .expect("Final Render Failed.");
@@ -299,40 +303,3 @@ fn main(){
         platform.handle_event(imgui_context.io_mut(), &window, &event);
     });
 }
-
-// queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::cast_slice(&[uniform_buffer_data]));
-
-// let values = [0.2, 0.5, 0.9];
-// ui.plot_lines(im_str!("Lines"), &values).graph_size([300., 100.])
-//     .scale_max(1.0)
-//     .scale_min(0.0)
-//     .build();;
-
-// if frame_count % 2 == 0{
-//gpu.compute_pass(&queue, &device);
-// gpu.draw(renderer.textures.get(zone1_texture.id).unwrap().view(), &queue, &device);
-// }
-
-// window.build(&ui, || {
-// ui.text_wrapped(&im_str!("Index: {}", result_str));
-//
-// ui.separator();
-//
-// ui.plot_histogram(im_str!(""), &state.pi_digits).build();
-// ui.plot_lines(im_str!(""), &state.pi_digits).build();
-//
-// ui.separator();
-//
-// ui.input_text(im_str!("Sequence"), &mut query)
-// .resize_buffer(true)
-// .build();
-//
-// ui.separator();
-//
-// state.search_button_clicked = ui.button(im_str!("Search"), [75.0, 25.0]);
-// });
-
-// if last_cursor != Some(ui.mouse_cursor()){
-//     last_cursor = Some(ui.mouse_cursor());
-//     platform.prepare_render(&ui, &window);
-// }
